@@ -81,10 +81,28 @@ class Tokenizer:
         if len(tokens) <= 1:
             return tokens
         
-        # TODO: Implement BPE algorithm
-        # Return tokens
-        
-        raise NotImplementedError("Implement _bpe")
+        while True:
+            pairs = self._get_pairs(tokens)
+            best_rank = float("inf")
+            highest_rank = None
+            for p in pairs:
+                rank = self.inverse_vocab.get(p[0] + p[1], float("inf"))
+                if rank < best_rank:
+                    best_rank = rank
+                    highest_rank = p
+            if highest_rank is None or highest_rank[0] + highest_rank[1] not in self.inverse_vocab:
+                break
+            new_tokens = []
+            i = 0
+            while i < len(tokens):
+                if i < len(tokens) - 1 and tokens[i] == highest_rank[0] and tokens[i + 1] == highest_rank[1]:
+                    new_tokens.append(highest_rank[0] + highest_rank[1]) # merged tokens in new list
+                    i += 2
+                else:
+                    new_tokens.append(tokens[i])
+                    i += 1
+            tokens = new_tokens
+        return tokens
 
     def _split_with_special_tokens(self, text: str) -> list[tuple[str, bool]]:
         """
@@ -139,9 +157,19 @@ class Tokenizer:
             return []
         
         ids = []
-        # TODO: Implement encoding
-        
-        raise NotImplementedError("Implement _encode_chunk")
+        pre_tokens = self.pat.findall(text)
+
+        for pt in pre_tokens:
+            token_bytes = pt.encode('utf-8')
+            byte_sequence = self._bpe(token_bytes)
+
+            for byte in byte_sequence:
+                if byte in self.inverse_vocab:
+                    ids.append(self.inverse_vocab[byte])
+                else:
+                    for b in byte:
+                        ids.append(self.inverse_vocab[bytes([b])])
+        return ids
 
     def encode(self, text: str) -> list[int]:
         """
@@ -189,9 +217,8 @@ class Tokenizer:
         if not ids:
             return ""
         
-        # TODO: Implement decoding
-        
-        raise NotImplementedError("Implement decode")
+        result = b"".join(self.vocab[id] for id in ids)
+        return result.decode('utf-8', errors='replace')
 
     def encode_iterable(self, iterable: Iterator[str]) -> Iterator[int]:
         """

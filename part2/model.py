@@ -50,10 +50,8 @@ class Linear(nn.Module):
         Returns:
             Output tensor of shape (..., d_out)
         """
-        # TODO: Implement linear transformation
-        
-        raise NotImplementedError("Implement Linear.forward")
-
+        y = x @ self.weight.T
+        return y
 
 # =============================================================================
 # Problem (embedding): Implement the embedding module
@@ -76,7 +74,7 @@ class Embedding(nn.Module):
         self.vocab_size = vocab_size
         self.d_model = d_model
         # Embedding weight matrix of shape (vocab_size, d_model)
-        # TODO: Implement embedding
+        self.weight = nn.Parameter(torch.empty(vocab_size, d_model))
         self._init_weights()
     
     def _init_weights(self):
@@ -92,11 +90,8 @@ class Embedding(nn.Module):
         
         Returns:
             Tensor of embeddings of shape (batch, seq_len, d_model)
-        """
-        # TODO: Implement embedding lookup
-        
-        raise NotImplementedError("Implement Embedding.forward")
-
+        """                    
+        return self.weight[token_ids]
 
 # =============================================================================
 # Problem (rmsnorm): Root Mean Square Layer Normalization
@@ -140,10 +135,9 @@ class RMSNorm(nn.Module):
         Returns:
             Normalized tensor of same shape
         """
-        # TODO: Implement RMS normalization
-        
-        raise NotImplementedError("Implement RMSNorm.forward")
-
+        rms = torch.sqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps)
+        x = x / rms * self.weight
+        return x
 
 # =============================================================================
 # Problem (softmax): Implement softmax (used in attention)
@@ -160,9 +154,8 @@ def softmax(x: Tensor, dim: int = -1) -> Tensor:
     Returns:
         Tensor of same shape as input with softmax applied along dim
     """
-    # TODO: Implement numerically stable softmax
-    
-    raise NotImplementedError("Implement softmax")
+    y = torch.exp(x) / torch.sum(torch.exp(x), dim=dim, keepdim=True)
+    return y
 
 # =============================================================================
 # SiLU activation (helper for SwiGLU)
@@ -179,10 +172,8 @@ def silu(x: Tensor) -> Tensor:
     Returns:
         Tensor with SiLU applied element-wise
     """
-    # TODO: Implement SiLU activation
-    
-    raise NotImplementedError("Implement silu")
-
+    y = x / (1 + torch.exp(-x))    
+    return y
 
 # =============================================================================
 # Problem (positionwise_feedforward): Implement the position-wise feed-forward network
@@ -225,10 +216,10 @@ class SwiGLU(nn.Module):
         Returns:
             Output tensor of shape (..., d_model)
         """
-        # TODO: Implement SwiGLU
-        
-        raise NotImplementedError("Implement SwiGLU.forward")
-
+        x1 = self.w1(x)
+        x3 = self.w3(x)
+        h = silu(x1) * x3
+        return self.w2(h)
 
 # =============================================================================
 # Problem (rope): Implement RoPE (Rotary Position Embedding)
@@ -304,7 +295,7 @@ class RotaryPositionEmbedding(nn.Module):
         
         # Precompute frequencies
         # inv_freq shape: (d_model // 2,)
-        # TODO: Implement inv_freq
+        inv_freq = 1.0 / (self.theta ** (torch.arange(0, self.d_model, 2).float() / self.d_model))
         self.register_buffer("inv_freq", inv_freq)
         
         # Precompute cos and sin for all positions
@@ -350,10 +341,10 @@ class RotaryPositionEmbedding(nn.Module):
             x1, x2 = x[..., :x.shape[-1]//2], x[..., x.shape[-1]//2:]
             return torch.cat([-x2, x1], dim=-1)
         """
-        # TODO: Implement rotate_half
-        
-        raise NotImplementedError("Implement _rotate_half")
-    
+        x1 = x[:, :x.shape[0]//2]
+        x2 = x[:, x.shape[0]//2:]
+        return torch.cat([-x2, x1], dim=-1)
+            
     def forward(self, x: Tensor, token_positions: Tensor) -> Tensor:
         """
         Apply rotary position embedding.
