@@ -193,6 +193,47 @@ def train_bpe(
         for i in range(2, len(special_bytes) + 1):
             forbidden_substrings.add(special_bytes[:i])
     
-    # TODO: Implement BPE training
-    
-    raise NotImplementedError("Implement train_bpe")
+    raw_tokens = [st.encode("utf-8") for st in special_tokens]
+    raw_tokens += [bytes([i]) for i in range(256)]
+
+    vocab = {id: val for id, val in enumerate(raw_tokens)}
+
+    count = Counter()
+    for chunk in pre_tokenize(text, special_tokens):
+        raw_chunks= chunk.encode("utf-8")
+        forbidden = any(bad_bit in raw_chunks for bad_bit in forbidden_substrings)
+        if forbidden:
+            continue
+        word = tuple(raw_chunks[i : i + 1] for i in range(len(raw_chunks)))
+        count[word] += 1
+
+    def find_pairs(count):
+        pairs = Counter()
+        for w, c in count.items():
+            for pair in zip(w, w[1:]):
+                pairs[pair] += c
+        return pairs
+
+    pair_count = find_pairs(count)
+    merges = []
+
+    while len(vocab) < vocab_size:
+        if not pair_count:
+            break
+            
+        max_freq = max(pair_count.values())
+        best_pair = min(p for p in pair_count if pair_count[p] == max_freq) 
+        
+        new_id = len(vocab)
+        vocab[new_id] = best_pair[0] + best_pair[1]
+        merges.append(best_pair)
+        
+        new_word_counts = Counter()
+        for word, freq in count.items():
+            processed_word = merge_word(word, best_pair) if best_pair in zip(word, word[1:]) else word
+            new_word_counts[processed_word] += freq
+        
+        count = new_word_counts
+        pair_count = find_pairs(count)
+
+    return vocab, merges
