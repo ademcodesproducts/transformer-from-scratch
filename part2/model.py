@@ -341,9 +341,10 @@ class RotaryPositionEmbedding(nn.Module):
             x1, x2 = x[..., :x.shape[-1]//2], x[..., x.shape[-1]//2:]
             return torch.cat([-x2, x1], dim=-1)
         """
-        x1 = x[:, :x.shape[0]//2]
-        x2 = x[:, x.shape[0]//2:]
+        x1 = x[..., :x.shape[-1]//2]
+        x2 = x[..., x.shape[-1]//2:]
         return torch.cat([-x2, x1], dim=-1)
+
             
     def forward(self, x: Tensor, token_positions: Tensor) -> Tensor:
         """
@@ -381,9 +382,13 @@ class RotaryPositionEmbedding(nn.Module):
             
             x_rotated = x * cos + rotate_half(x) * sin  # (2, 8, 10, 64)
         """
-        # TODO: Implement RoPE forward pass
-        
-        raise NotImplementedError("Implement RotaryPositionEmbedding.forward")
+        cos = self.cos_cached[token_positions]
+        sin = self.sin_cached[token_positions] 
+        if x.ndim == 4:
+            cos = cos.unsqueeze(1)
+            sin = sin.unsqueeze(1)
+    
+        return x * cos + self._rotate_half(x) * sin
 
 
 def apply_rope(x: Tensor, d_model: int, theta: float, max_seq_len: int, token_positions: Tensor) -> Tensor:
@@ -431,11 +436,10 @@ def scaled_dot_product_attention(
         Attention output of shape (..., seq_len_q, d_v)
     """
     d_k = Q.shape[-1]
-    
-    # TODO: Implement scaled dot-product attention
-    
-    raise NotImplementedError("Implement scaled_dot_product_attention")
-
+    score = Q @ K.transpose(-2, -1) / (d_k ** 0.5)
+    if mask is not None:
+        score = score.masked_fill(~mask, float('-inf'))
+    return softmax(score, dim=-1) @ V
 
 # =============================================================================
 # Problem (multihead_self_attention): Implement causal multi-head self-attention
@@ -456,7 +460,7 @@ class MultiHeadSelfAttention(nn.Module):
         
         Args:
             d_model: Model dimension
-            num_heads: Number of attention heads
+            num_heads: Number of attention headsh
         """
         super().__init__()
         assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
@@ -488,10 +492,20 @@ class MultiHeadSelfAttention(nn.Module):
             Output tensor of shape (batch, seq_len, d_model)
         """
         batch_size, seq_len, _ = x.shape
-        
-        # TODO: Implement multi-head self-attention
-        
-        raise NotImplementedError("Implement MultiHeadSelfAttention.forward")
+
+        Q, K, V = self.q_proj(x), self.k_proj(x), self.v_proj(x)
+
+        def split_heads(t: Tensor):
+            return (t.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2))
+
+        Q, K, V = map(split_heads, (Q, K, V))
+
+        mask = self._create_causal_mask(seq_len, x.device)
+
+        attention = scaled_dot_product_attention(Q, K, V, mask)
+        attnention = (attention.transpose(1, 2)  .contiguous().view(batch_size, seq_len, self.d_model))
+
+        return self.output_proj(attention)
 
 
 class MultiHeadSelfAttentionWithRoPE(nn.Module):
@@ -553,9 +567,22 @@ class MultiHeadSelfAttentionWithRoPE(nn.Module):
         if token_positions is None:
             token_positions = torch.arange(seq_len, device=x.device).unsqueeze(0).expand(batch_size, -1)
         
-        # TODO: Implement multi-head self-attention with RoPE
-        
-        raise NotImplementedError("Implement MultiHeadSelfAttentionWithRoPE.forward")
+        Q, K, V = self.q_proj(x), self.k_proj(x), self.v_proj(x)
+
+        def split_heads(t: Tensor):
+            return t.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+
+        Q, K, V = map(split_heads, (Q, K, V))
+
+        Q = self.rope(Q, token_positions)
+        K = self.rope(K, token_positions)
+
+        mask = self._create_causal_mask(seq_len, x.device)
+
+        attention = scaled_dot_product_attention(Q, K, V, mask)
+        attention = attention.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
+
+        return self.output_proj(attention)
 
 
 # =============================================================================
@@ -614,9 +641,9 @@ class TransformerBlock(nn.Module):
         Returns:
             Output tensor of shape (batch, seq_len, d_model)
         """
-        # TODO: Implement Transformer block forward pass
-        
-        raise NotImplementedError("Implement TransformerBlock.forward")
+        x = x + self.attn(self.ln1(x), token_positions)
+        x = x + self.ffn(self.ln2(x))
+        return x
 
 
 # =============================================================================
@@ -698,9 +725,13 @@ class TransformerLM(nn.Module):
         if token_positions is None:
             token_positions = torch.arange(seq_len, device=token_ids.device).unsqueeze(0).expand(batch_size, -1)
         
-        # TODO: Implement TransformerLM forward pass
-        
-        raise NotImplementedError("Implement TransformerLM.forward")
+        x = self.token_embeddings(token_ids)
+
+        for l in self.layers:
+            x = l(x, token_positions)
+        logits = self.output(self.final_ln(x))
+
+        return logits
     
     def load_weights(self, state_dict: dict):
         """
@@ -792,9 +823,13 @@ def count_flops_per_token(
     Returns:
         Approximate FLOPs per token
     """
-    # TODO: Implement FLOPs counting
-    
-    raise NotImplementedError("Implement count_flops_per_token")
+    projection_MAC= 4 * d_model * d_model
+    attention_MAC = 2 * context_length * d_model
+    ffn_MAC = 3 * d_model * d_ff
+
+    layer_MAC = projection_MAC + attention_MAC + ffn_MAC
+    sum_MAC = num_layers * layer_MAC + d_model * vocab_size  
+    return int(2 * sum_MAC)
 
 
 def estimate_memory_bytes(
@@ -817,6 +852,14 @@ def estimate_memory_bytes(
     Returns:
         Approximate memory in bytes
     """
-    # TODO: Implement memory estimation
-    
-    raise NotImplementedError("Implement estimate_memory_bytes")
+    token_embedding_params = vocab_size * d_model
+
+    attention_params = 4 * d_model * d_model
+    ffn_params = 3 * d_model * d_ff
+    norm_params = 2 * d_model
+
+    layer_params = attention_params + ffn_params + norm_params
+    transformer_params = num_layers * layer_params
+
+    sum_params = token_embedding_params + transformer_params + d_model + d_model * vocab_size
+    return int(sum_params * dtype_bytes)
