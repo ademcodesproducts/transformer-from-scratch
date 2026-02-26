@@ -438,7 +438,8 @@ def scaled_dot_product_attention(
     score = Q @ K.transpose(-2, -1) / (d_k ** 0.5)
     if mask is not None:
         score = score.masked_fill(~mask, float('-inf'))
-    return softmax(score, dim=-1) @ V
+    attn_weights = torch.nan_to_num(softmax(score, dim=-1), nan=0.0)
+    return attn_weights @ V
 
 # =============================================================================
 # Problem (multihead_self_attention): Implement causal multi-head self-attention

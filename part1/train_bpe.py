@@ -210,7 +210,7 @@ def train_bpe(
     def find_pairs(count):
         pairs = Counter()
         for w, c in count.items():
-            for pair in zip(w, w[1:]):
+            for pair in get_pairs(w):
                 pairs[pair] += c
         return pairs
 
@@ -221,8 +221,7 @@ def train_bpe(
         if not pair_count:
             break
             
-        max_freq = max(pair_count.values())
-        best_pair = min(p for p in pair_count if pair_count[p] == max_freq) 
+        best_pair = max(pair_count, key=lambda p: (pair_count[p], p))
         
         new_id = len(vocab)
         vocab[new_id] = best_pair[0] + best_pair[1]
