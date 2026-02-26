@@ -38,7 +38,8 @@ class Tokenizer:
         self.special_tokens = special_tokens or []
         # Sort special tokens by length (descending) for longest-match-first
         self.special_tokens_sorted = sorted(self.special_tokens, key=len, reverse=True)
-        
+        self._bpe_cache = {}
+
         # Build special token to ID mapping
         self.special_token_ids = {}
         for token in self.special_tokens:
@@ -75,6 +76,9 @@ class Tokenizer:
                b. Merge all occurrences of that pair
             3. Return final token list
         """
+        if token_bytes in self._bpe_cache:
+            return self._bpe_cache[token_bytes]
+    
         # Start with individual bytes
         tokens = [bytes([b]) for b in token_bytes]
         
@@ -102,6 +106,7 @@ class Tokenizer:
                     new_tokens.append(tokens[i])
                     i += 1
             tokens = new_tokens
+        self._bpe_cache[token_bytes] = tokens
         return tokens
 
     def _split_with_special_tokens(self, text: str) -> list[tuple[str, bool]]:
