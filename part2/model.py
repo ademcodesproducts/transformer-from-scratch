@@ -154,7 +154,8 @@ def softmax(x: Tensor, dim: int = -1) -> Tensor:
     Returns:
         Tensor of same shape as input with softmax applied along dim
     """
-    return torch.exp(x - x.max(dim=dim, keepdim=True).values) / torch.exp(x - x.max(dim=dim, keepdim=True).values).sum(dim=dim, keepdim=True)
+    e = torch.exp(x - x.max(dim=dim, keepdim=True).values)
+    return e / e.sum(dim=dim, keepdim=True)
 
 # =============================================================================
 # SiLU activation (helper for SwiGLU)

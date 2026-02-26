@@ -48,7 +48,7 @@ class Tokenizer:
                 self.special_token_ids[token] = self.inverse_vocab[token_bytes]
         
         # GPT-2 regex pattern for pre-tokenization
-        # This splits text into chunks that are tokenized independently
+        # This splits text into pre_token that are tokenized independently
         self.pat = re.compile(
             r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""",
             re.UNICODE
@@ -120,12 +120,11 @@ class Tokenizer:
         if not self.special_tokens_sorted:
             return [(text, False)] if text else []
 
-        escaped_special_tokens = map(re.escape, self.special_tokens_sorted)
-        pattern = f"({'|'.join(escaped_special_tokens)})"
+        patterns = f"({'|'.join(map(re.escape, self.special_tokens_sorted))})"
 
-        special_toks_set = set(self.special_tokens_sorted)
+        special_tokens_set = set(self.special_tokens_sorted)
 
-        return [(p, p in special_toks_set) for p in re.split(pattern, text) if p != ""]
+        return [(p, p in special_tokens_set) for p in re.split(patterns, text) if p != ""]
 
     def _encode_chunk(self, text: str) -> list[int]:
         """
@@ -143,18 +142,17 @@ class Tokenizer:
             return []
         
         ids = []
-        pre_tokens = self.pat.findall(text)
+        pre_token = self.pat.findall(text)
 
-        for pt in pre_tokens:
-            token_bytes = pt.encode('utf-8')
+        for c in pre_token:
+            token_bytes = c.encode('utf-8')
             byte_sequence = self._bpe(token_bytes)
 
             for byte in byte_sequence:
                 if byte in self.inverse_vocab:
                     ids.append(self.inverse_vocab[byte])
                 else:
-                    for b in byte:
-                        ids.append(self.inverse_vocab[bytes([b])])
+                    ids.extend(self.inverse_vocab[bytes([b])] for b in byte)
         return ids
 
     def encode(self, text: str) -> list[int]:
@@ -197,7 +195,7 @@ class Tokenizer:
         
         Algorithm:
             1. For each token_id, look up corresponding bytes in self.vocab
-            2. Concatenate all byte chunks
+            2. Concatenate all byte pre_token
             3. Decode as UTF-8 with errors="replace"
         """
         if not ids:

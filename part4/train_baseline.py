@@ -74,6 +74,7 @@ CONFIGS = {
         "pretrain_epochs": 3,
         "finetune_epochs": 10,
         "batch_size": 32,
+        "finetune_batch_size": 16,
         "lr": 3e-4,
     },
     "medium": {
@@ -90,6 +91,7 @@ CONFIGS = {
         "pretrain_epochs": 5,
         "finetune_epochs": 15,
         "batch_size": 16,
+        "finetune_batch_size": 16,
         "lr": 1e-4,
     }
 }
@@ -342,7 +344,7 @@ def finetune_qa(
     train_dataloader = create_qa_dataloader(
         data=train_data,
         tokenizer=tokenizer,
-        batch_size=config["batch_size"],
+        batch_size=config["finetune_batch_size"],
         max_length=config["context_length"],
         num_choices=4,
         shuffle=True,
@@ -410,7 +412,7 @@ def evaluate_finetuned(
     dev_dataloader = create_qa_dataloader(
         data=dev_data,
         tokenizer=tokenizer,
-        batch_size=config["batch_size"],
+        batch_size=config["finetune_batch_size"],
         max_length=config["context_length"],
         num_choices=4,
         shuffle=False,
