@@ -154,8 +154,7 @@ def softmax(x: Tensor, dim: int = -1) -> Tensor:
     Returns:
         Tensor of same shape as input with softmax applied along dim
     """
-    y = torch.exp(x) / torch.sum(torch.exp(x), dim=dim, keepdim=True)
-    return y
+    return torch.exp(x - x.max(dim=dim, keepdim=True).values) / torch.exp(x - x.max(dim=dim, keepdim=True).values).sum(dim=dim, keepdim=True)
 
 # =============================================================================
 # SiLU activation (helper for SwiGLU)
@@ -503,10 +502,8 @@ class MultiHeadSelfAttention(nn.Module):
         mask = self._create_causal_mask(seq_len, x.device)
 
         attention = scaled_dot_product_attention(Q, K, V, mask)
-        attnention = (attention.transpose(1, 2)  .contiguous().view(batch_size, seq_len, self.d_model))
-
+        attention = attention.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
         return self.output_proj(attention)
-
 
 class MultiHeadSelfAttentionWithRoPE(nn.Module):
     """

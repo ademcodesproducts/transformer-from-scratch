@@ -17,7 +17,7 @@ def softmax(x: Tensor, dim: int = -1) -> Tensor:
     Returns:
         Tensor of same shape as input with softmax applied along dim
     """
-    return torch.exp(x - torch.logsumexp(x, dim=dim, keepdim=True))
+    return torch.exp(x - x.max(dim=dim, keepdim=True).values) / torch.exp(x - x.max(dim=dim, keepdim=True).values).sum(dim=dim, keepdim=True)
 
 def cross_entropy(logits: Tensor, targets: Tensor) -> Tensor:
     """
