@@ -76,37 +76,40 @@ class Tokenizer:
                b. Merge all occurrences of that pair
             3. Return final token list
         """
-        if token_bytes in self._bpe_cache:
-            return self._bpe_cache[token_bytes]
-    
-        # Start with individual bytes
         tokens = [bytes([b]) for b in token_bytes]
         
         if len(tokens) <= 1:
             return tokens
-        
-        while True:
-            pairs = self._get_pairs(tokens)
-            best_rank = float("inf")
-            highest_rank = None
-            for p in pairs:
-                rank = self.inverse_vocab.get(p[0] + p[1], float("inf"))
-                if rank < best_rank:
-                    best_rank = rank
-                    highest_rank = p
-            if highest_rank is None or highest_rank[0] + highest_rank[1] not in self.inverse_vocab:
+
+        while len(tokens) > 1:
+            best_pair = None
+            best_rank = float('inf')
+
+            for i in range(len(tokens) - 1):
+                pair = (tokens[i], tokens[i + 1])
+                merged = pair[0] + pair[1]
+                if merged in self.inverse_vocab:
+                    rank = self.inverse_vocab[merged]
+                    if rank < best_rank:
+                        best_rank = rank
+                        best_pair = pair
+
+            if best_pair is None:
                 break
+
             new_tokens = []
             i = 0
             while i < len(tokens):
-                if i < len(tokens) - 1 and tokens[i] == highest_rank[0] and tokens[i + 1] == highest_rank[1]:
-                    new_tokens.append(highest_rank[0] + highest_rank[1]) # merged tokens in new list
+                if (i < len(tokens) - 1
+                        and tokens[i] == best_pair[0]
+                        and tokens[i + 1] == best_pair[1]):
+                    new_tokens.append(best_pair[0] + best_pair[1])
                     i += 2
                 else:
                     new_tokens.append(tokens[i])
                     i += 1
             tokens = new_tokens
-        self._bpe_cache[token_bytes] = tokens
+
         return tokens
 
     def _split_with_special_tokens(self, text: str) -> list[tuple[str, bool]]:
@@ -116,35 +119,13 @@ class Tokenizer:
         """
         if not self.special_tokens_sorted:
             return [(text, False)] if text else []
-        
-        result = []
-        remaining = text
-        
-        while remaining:
-            # Find the earliest occurring special token
-            earliest_pos = len(remaining)
-            earliest_token = None
-            
-            for special in self.special_tokens_sorted:
-                pos = remaining.find(special)
-                if pos != -1 and pos < earliest_pos:
-                    earliest_pos = pos
-                    earliest_token = special
-            
-            if earliest_token is None:
-                # No special token found, add remaining text
-                if remaining:
-                    result.append((remaining, False))
-                break
-            else:
-                # Add text before the special token
-                if earliest_pos > 0:
-                    result.append((remaining[:earliest_pos], False))
-                # Add the special token
-                result.append((earliest_token, True))
-                remaining = remaining[earliest_pos + len(earliest_token):]
-        
-        return result
+
+        escaped_special_tokens = map(re.escape, self.special_tokens_sorted)
+        pattern = f"({'|'.join(escaped_special_tokens)})"
+
+        special_toks_set = set(self.special_tokens_sorted)
+
+        return [(p, p in special_toks_set) for p in re.split(pattern, text) if p != ""]
 
     def _encode_chunk(self, text: str) -> list[int]:
         """

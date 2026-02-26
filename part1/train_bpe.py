@@ -8,7 +8,7 @@ from a text corpus, compatible with GPT-2 style tokenization.
 from __future__ import annotations
 
 import regex as re
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Iterator
 
@@ -182,57 +182,84 @@ def train_bpe(
     """
     special_tokens = special_tokens or []
     
-    # Read the corpus
     with open(input_path, encoding="utf-8") as f:
         text = f.read()
-    
-    # Build set of "forbidden" substrings from special tokens
+
     forbidden_substrings = set()
     for special in special_tokens:
         special_bytes = special.encode("utf-8")
         for i in range(2, len(special_bytes) + 1):
             forbidden_substrings.add(special_bytes[:i])
-    
-    raw_tokens = [st.encode("utf-8") for st in special_tokens]
-    raw_tokens += [bytes([i]) for i in range(256)]
 
-    vocab = {id: val for id, val in enumerate(raw_tokens)}
+    vocab: dict[int, bytes] = {}
+    for token in special_tokens:
+        vocab[len(vocab)] = token.encode("utf-8")
+    for b in range(256):
+        vocab[len(vocab)] = bytes([b])
 
-    count = Counter()
-    for chunk in pre_tokenize(text, special_tokens):
-        raw_chunks= chunk.encode("utf-8")
-        forbidden = any(bad_bit in raw_chunks for bad_bit in forbidden_substrings)
-        if forbidden:
+    word_freqs: Counter[tuple[bytes, ...]] = Counter()
+    for word_str in pre_tokenize(text, special_tokens):
+        word_bytes = word_str.encode("utf-8")
+        if any(fb in word_bytes for fb in forbidden_substrings):
             continue
-        word = tuple(raw_chunks[i : i + 1] for i in range(len(raw_chunks)))
-        count[word] += 1
+        word_tuple = tuple(bytes([b]) for b in word_bytes)
+        word_freqs[word_tuple] += 1
 
-    def find_pairs(count):
-        pairs = Counter()
-        for w, c in count.items():
-            for pair in get_pairs(w):
-                pairs[pair] += c
-        return pairs
 
-    pair_count = find_pairs(count)
-    merges = []
+    pair_counts: Counter[tuple[bytes, bytes]] = Counter()
+    pair_to_words: dict[tuple[bytes, bytes], set[tuple[bytes, ...]]] = defaultdict(set)
+    for word, freq in word_freqs.items():
+        seen: set[tuple[bytes, bytes]] = set()
+        for i in range(len(word) - 1):
+            pair = (word[i], word[i + 1])
+            if pair not in seen:
+                pair_counts[pair] += freq
+                pair_to_words[pair].add(word)
+                seen.add(pair)
 
-    while len(vocab) < vocab_size:
-        if not pair_count:
+    merges: list[tuple[bytes, bytes]] = []
+    num_merges = vocab_size - len(vocab)
+
+    for _ in range(num_merges):
+        if not pair_counts:
             break
-            
-        best_pair = max(pair_count, key=lambda p: (pair_count[p], p))
-        
-        new_id = len(vocab)
-        vocab[new_id] = best_pair[0] + best_pair[1]
+
+        best_pair = max(pair_counts, key=lambda p: (pair_counts[p], p))
+
+        first, second = best_pair
+        new_token = first + second
+        vocab[len(vocab)] = new_token
         merges.append(best_pair)
-        
-        new_word_counts = Counter()
-        for word, freq in count.items():
-            processed_word = merge_word(word, best_pair) if best_pair in zip(word, word[1:]) else word
-            new_word_counts[processed_word] += freq
-        
-        count = new_word_counts
-        pair_count = find_pairs(count)
+
+        affected_words = list(pair_to_words.get(best_pair, set()))
+        for old_word in affected_words:
+            freq = word_freqs[old_word]
+            new_word = merge_word(old_word, best_pair)
+
+            if new_word == old_word:
+                continue
+
+            seen_old: set[tuple[bytes, bytes]] = set()
+            for i in range(len(old_word) - 1):
+                pair = (old_word[i], old_word[i + 1])
+                if pair not in seen_old:
+                    pair_counts[pair] -= freq
+                    if pair_counts[pair] <= 0:
+                        del pair_counts[pair]
+                    pair_to_words[pair].discard(old_word)
+                    seen_old.add(pair)
+
+            del word_freqs[old_word]
+            word_freqs[new_word] += freq
+
+            seen_new: set[tuple[bytes, bytes]] = set()
+            for i in range(len(new_word) - 1):
+                pair = (new_word[i], new_word[i + 1])
+                if pair not in seen_new:
+                    pair_counts[pair] += freq
+                    pair_to_words[pair].add(new_word)
+                    seen_new.add(pair)
+
+        pair_to_words.pop(best_pair, None)
 
     return vocab, merges
