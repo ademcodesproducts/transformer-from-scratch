@@ -45,16 +45,6 @@ class PromptingPipeline:
         self.template = template or PromptTemplate("basic")
         self.device = device
         self.few_shot = few_shot
-        self._setup_choice_tokens()
-    
-    def _setup_choice_tokens(self):
-        self.choice_tokens = {}
-        for label in ["A", "B", "C", "D"]:
-            for prefix in ["", " "]:
-                token_ids = self.tokenizer.encode(prefix + label)
-                if token_ids:
-                    self.choice_tokens[label] = token_ids[-1]
-                    break
 
     def _create_few_shot(self):
         prefix = ""
@@ -64,31 +54,39 @@ class PromptingPipeline:
         return prefix
     
     @torch.no_grad()
-    def predict_single(self, context: str, question: str, choices: List[str], return_probs: bool = False):
+    def predict_single(self, context, question, choices, return_probs=False):
         self.model.eval()
         few_shot = self._create_few_shot() if self.few_shot else ""
-        prompt = self.template.format(context, question, choices, few_shot)
-        token_ids = self.tokenizer.encode(prompt)
-        if hasattr(self.model, 'context_length'):
-            token_ids = token_ids[-self.model.context_length:]
-        input_ids = torch.tensor([token_ids], device=self.device)
-        logits = self.model(input_ids)[:, -1, :]
-        
-        choice_labels = ["A", "B", "C", "D"][:len(choices)]
-        choice_logits = []
-        for label in choice_labels:
-            if label in self.choice_tokens:
-                choice_logits.append(logits[0, self.choice_tokens[label]].item())
+
+        choices_text = " / ".join(choices)
+        prefix = f"{few_shot}{context}\nQuestion: {question}\nOptions: {choices_text}\nAnswer:"
+        prefix_tokens = self.tokenizer.encode(prefix)
+        max_len = getattr(self.model, 'context_length', 512)
+
+        choice_scores = []
+        for choice in choices:
+            answer_tokens = self.tokenizer.encode(" " + choice)
+            sequence = (prefix_tokens + answer_tokens)[-max_len:]
+            answer_start = len(sequence) - min(len(answer_tokens), len(sequence))
+
+            logits = self.model(torch.tensor([sequence], device=self.device))
+            log_probs = torch.log_softmax(logits[0], dim=-1)
+
+            if answer_start > 0:
+                pred_positions = torch.arange(answer_start - 1, len(sequence) - 1, device=self.device)
+                target_tokens = torch.tensor(sequence[answer_start:], device=self.device)
+                score = log_probs[pred_positions, target_tokens].mean().item()
             else:
-                choice_logits.append(float("-inf"))
-        
-        choice_logits = torch.tensor(choice_logits)
-        probs = softmax(choice_logits, dim=-1)
-        prediction = probs.argmax().item()
-        
+                score = float('-inf')
+            choice_scores.append(score)
+
+        choice_scores = torch.tensor(choice_scores)
+        prediction = choice_scores.argmax().item()
+
         if return_probs:
-            return prediction, probs.tolist()
+            return prediction, torch.softmax(choice_scores, dim=-1).tolist()
         return prediction
+
     
     @torch.no_grad()
     def predict_batch(self, fsamples: List[Dict[str, Any]], batch_size: int = 8) -> List[int]:
