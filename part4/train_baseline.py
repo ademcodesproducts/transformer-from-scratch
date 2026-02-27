@@ -58,6 +58,7 @@ CONFIGS = {
         "pretrain_epochs": 3,
         "finetune_epochs": 5,
         "batch_size": 32,
+        "finetune_batch_size": 8,
         "lr": 1e-3,
     },
     "small": {
@@ -73,7 +74,7 @@ CONFIGS = {
         "context_length": 512,
         "pretrain_epochs": 3,
         "finetune_epochs": 10,
-        "batch_size": 32,
+        "batch_size": 8,
         "finetune_batch_size": 4,
         "lr": 3e-4,
     },

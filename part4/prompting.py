@@ -68,7 +68,10 @@ class PromptingPipeline:
         self.model.eval()
         few_shot = self._create_few_shot() if self.few_shot else ""
         prompt = self.template.format(context, question, choices, few_shot)
-        input_ids = torch.tensor([self.tokenizer.encode(prompt)], device=self.device)
+        token_ids = self.tokenizer.encode(prompt)
+        if hasattr(self.model, 'context_length'):
+            token_ids = token_ids[-self.model.context_length:]
+        input_ids = torch.tensor([token_ids], device=self.device)
         logits = self.model(input_ids)[:, -1, :]
         
         choice_labels = ["A", "B", "C", "D"][:len(choices)]
