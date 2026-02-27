@@ -505,7 +505,7 @@ Examples:
     # Step 4: Evaluate prompting on fine-tuned model
     # Use the fine-tuned backbone (qa_model.transformer) for prompting
     prompting_results = evaluate_prompting(
-        qa_model.transformer, tokenizer,
+        pretrained_model, tokenizer,
         config["qa_dev"], device
     )
     
